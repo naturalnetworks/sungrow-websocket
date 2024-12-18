@@ -34,6 +34,12 @@ The command line interface is quite simple:
 ``<host>`` is the hostname or IP address of the inverter. Check your home router
 for the inverter (maybe registers as ``espressif``).
 
+For later WiNET-S firmware versions where HTTP/80 and 8082 are no longer supported:
+
+.. code::
+
+    sungrow-websocket <host> --port 443 --username <username> --password <password>
+
 You will then get a table with the live data:
 
 .. code::
@@ -60,6 +66,18 @@ Using the library is easy:
     >>> from sungrow_websocket import SungrowWebsocket
     >>> host = "your-ip-or-hostname"
     >>> sg = SungrowWebsocket(host)
+    >>> data = sg.get_data()
+
+For SSL/TLS (later WiNET-S firmware versions):
+
+.. code:: python
+
+    >>> from sungrow_websocket import SungrowWebsocket
+    >>> host = "your-ip-or-hostname"
+    >>> port = 443
+    >>> username = "your-user-name"
+    >>> password = "your-password"
+    >>> sg = SungrowWebsocket(host,port=port,username=username,password=password)
     >>> data = sg.get_data()
 
 ``data`` is a dict of identifiers mapping to ``InverterItem`` entries:
