@@ -8,6 +8,7 @@ import websockets.client
 import json
 import aiohttp
 import argparse
+import ssl
 from terminaltables import AsciiTable  # type: ignore
 from collections import namedtuple
 from .version import version
@@ -36,21 +37,27 @@ class ResultData(TypedDict):
 
 class SungrowWebsocket:
     """ Websocket API to the Sungrow Inverter"""
-    def __init__(self, host: str, *, port: int = 8082, locale: str = "en_US"):
+    def __init__(self, host: str, *, port: int = 8082, locale: str = "en_US", username: str = "user", password: str = "pw1111"):
         self.host: str = host
         self.port: int = port
         self.locale: str = locale
+        self.username: str = username
+        self.password: str = password
         self.strings: dict[str, str] = {}
+
+        self.ws_protocol = "wss" if port == 443 else "ws"
+        self.protocol = "http" if port != 443 else "https"
 
     async def _update_strings(self):
         self.strings = {}
-        url: str = f"http://{self.host}/i18n/{self.locale}.properties"
-        async with aiohttp.ClientSession() as session:
+        url: str = f"{self.protocol}://{self.host}/i18n/{self.locale}.properties"
+        connector = aiohttp.TCPConnector(ssl=False)
+        async with aiohttp.ClientSession(connector=connector) as session:
             async with session.get(url) as response:
                 if response.status == 200:
                     text: str = await response.text()
                 else:
-                    url: str = f"http://{self.host}/i18n/en_US.properties"
+                    url: str = f"{self.protocol}://{self.host}/i18n/en_US.properties"
                     async with session.get(url) as response:
                         if response.status == 200:
                             text: str = await response.text()
@@ -67,12 +74,22 @@ class SungrowWebsocket:
             await self._update_strings()
 
         data: dict[str, InverterItem] = {}
+        ssl_context: ssl.SSLContext = ssl.create_default_context()
+        ssl_context.check_hostname = False
+        ssl_context.verify_mode = ssl.CERT_NONE
         async with websockets.client.connect(
-            f"ws://{self.host}:{self.port}/ws/home/overview"
+            f"{self.ws_protocol}://{self.host}:{self.port}/ws/home/overview",
+            ssl=ssl_context if self.port == 443 else None,
         ) as websocket:
             await websocket.send(
                 json.dumps(
-                    {"lang": self.locale, "token": "", "service": "connect"}
+                    {
+                        "lang": self.locale,
+                        "token": "",
+                        "service": "login",
+                        "username": self.username,
+                        "passwd": self.password,
+                    }
                 )
             )
             d: Result = json.loads(await websocket.recv())
@@ -204,13 +221,16 @@ def main():
         description="Retrieve data from Sungrow inverter using websocket"
     )
     parser.add_argument("host", help="Host (IP or address) of the inverter")
+    parser.add_argument("--port", help="Port of the inverter", type=int, default=8082)
+    parser.add_argument("--username", help="Username of the inverter", default="user")
+    parser.add_argument("--password", help="Password of the inverter", default="pw1111")
     parser.add_argument(
         "--details", action="store_true", help="show more details"
     )
     parser.add_argument('--version', action='version', version=version)
     args: dict[str, InverterItem] = parser.parse_args()
 
-    data: list[InverterItem] = SungrowWebsocket(args.host).get_data()
+    data: list[InverterItem] = SungrowWebsocket(args.host, port=args.port, username=args.username, password=args.password).get_data()
     if args.details:
         table: list[list[str]] = [["Item", "Value", "ID"]] + [
             [item.desc, f"{item.value} {item.unit}", id]
