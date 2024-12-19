@@ -100,7 +100,9 @@ class SungrowWebsocket:
                     {
                         "lang": self.locale,
                         "token": "", 
-                        "service": "connect", 
+                        "service": "connect",
+                        "username": self.username,
+                        "passwd": self.password,
                     }
                 )
             )
@@ -112,149 +114,161 @@ class SungrowWebsocket:
                 logging.debug("Connect failed")
                 return {}  # Return empty data on connect failure
 
-            token = connect_response["result_data"]["token"]
+            token: str = connect_response["result_data"]["token"]
 
-            async with websockets.client.connect(
-                f"{self.ws_protocol}://{self.host}:{self.port}/ws/home/overview",
-                ssl=ssl_context if self.port == 443 else None,
-            ) as websocket:
-                await websocket.send(
-                    json.dumps(
-                        {
-                            "lang": self.locale,
-                            "token": "",
-                            "service": "login",
-                            "username": self.username,
-                            "passwd": self.password
-                        }
-                    )
+            # async with websockets.client.connect(
+            #     f"{self.ws_protocol}://{self.host}:{self.port}/ws/home/overview",
+            #     ssl=ssl_context if self.port == 443 else None,
+            # ) as websocket:
+            await websocket.send(
+                json.dumps(
+                    {
+                        "lang": self.locale,
+                        "token": token,
+                        "service": "login",
+                        "username": self.username,
+                        "passwd": self.password,
+                    }
                 )
-                logging.debug("Sent login")
-                d: Result = json.loads(await websocket.recv())
-                logging.debug(f"Received login response: {d}")
+            )
+            logging.debug("Sent login")
+            d: Result = json.loads(await websocket.recv())
+            logging.debug(f"Received login response: {d}")
 
-                if d["result_code"] != 1 or d["result_msg"] != "success":
-                    return data
-                    logging.debug("Got failed login response")
-                token: str = d["result_data"]["token"]
+            if d["result_code"] != 1 or d["result_msg"] != "success":
+                return data
+                logging.debug("Got failed login response")
+            
+            token: str = d["result_data"]["token"]
 
-                logging.debug(f"Token: {token}")
+            # logging.debug(f"Token: {token}")
 
-                await websocket.send(
-                    json.dumps(
-                        {
-                            "lang": self.locale,
-                            "token": token,
-                            "service": "devicelist",
-                            "type": "0",
-                            "is_check_token": "0",
-                        }
-                    )
+            await websocket.send(
+                json.dumps(
+                    {
+                        "lang": self.locale,
+                        "token": token,
+                        "service": "devicelist",
+                        "type": "0",
+                        "is_check_token": "0",
+                    }
                 )
-                d = json.loads(await websocket.recv())
-                if d["result_code"] != 1 or d["result_msg"] != "success":
-                    return data
-                dev_id: str = str(d["result_data"]["list"][0]["dev_id"])
+            )
+            d = json.loads(await websocket.recv())
+            if d["result_code"] != 1 or d["result_msg"] != "success":
+                return data
+            dev_id: str = str(d["result_data"]["list"][0]["dev_id"])
 
-                logging.debug(f"Device ID: {dev_id}")
+            logging.debug(f"Device ID: {dev_id}")
 
-                await websocket.send(
-                    json.dumps(
-                        {
-                            "lang": self.locale,
-                            "token": token,
-                            "service": "real",
-                            "dev_id": dev_id,
-                        }
-                    )
+            await websocket.send(
+                json.dumps(
+                    {
+                        "lang": self.locale,
+                        "token": token,
+                        "service": "real",
+                        "dev_id": dev_id,
+                    }
                 )
-                d = json.loads(await websocket.recv())
-                if d["result_code"] != 1 or d["result_msg"] != "success":
-                    return data
+            )
+            d = json.loads(await websocket.recv())
+            if d["result_code"] != 1 or d["result_msg"] != "success":
+                return data
 
-                for item in d["result_data"]["list"]:
-                    name = item["data_name"]
-                    if name.startswith("I18N_COMMON_"):
-                        id: str = name.removeprefix("I18N_COMMON_").lower()
-                    else:
-                        id = name.removeprefix("I18N_").lower()
-                    data[id] = InverterItem(
-                        name=name,
-                        desc=self.strings.get(name, name),
-                        value=self.strings.get(item["data_value"], item["data_value"]),
-                        unit=item["data_unit"],
-                    )
-
-                await websocket.send(
-                    json.dumps(
-                        {
-                            "lang": self.locale,
-                            "token": token,
-                            "service": "real_battery",
-                            "dev_id": dev_id,
-                        }
-                    )
+            for item in d["result_data"]["list"]:
+                name = item["data_name"]
+                if name.startswith("I18N_COMMON_"):
+                    id: str = name.removeprefix("I18N_COMMON_").lower()
+                else:
+                    id = name.removeprefix("I18N_").lower()
+                data[id] = InverterItem(
+                    name=name,
+                    desc=self.strings.get(name, name),
+                    value=self.strings.get(item["data_value"], item["data_value"]),
+                    unit=item["data_unit"],
                 )
-                d = json.loads(await websocket.recv())
-                if d["result_code"] != 1 or d["result_msg"] != "success":
-                    return data
 
-                for item in d["result_data"]["list"]:
-                    name = item["data_name"]
-                    if name.startswith("I18N_COMMON_"):
-                        id: str = name.removeprefix("I18N_COMMON_").lower()
-                    else:
-                        id = name.removeprefix("I18N_").lower()
-                    data[id] = InverterItem(
-                        name=name,
-                        desc=self.strings.get(name, name),
-                        value=item["data_value"],
-                        unit=item["data_unit"],
-                    )
-
-                await websocket.send(
-                    json.dumps(
-                        {
-                            "lang": self.locale,
-                            "token": token,
-                            "service": "direct",
-                            "dev_id": dev_id,
-                        }
-                    )
+            await websocket.send(
+                json.dumps(
+                    {
+                        "lang": self.locale,
+                        "token": token,
+                        "service": "real_battery",
+                        "dev_id": dev_id,
+                    }
                 )
-                d = json.loads(await websocket.recv())
-                if d["result_code"] != 1 or d["result_msg"] != "success":
-                    return data
+            )
+            d = json.loads(await websocket.recv())
+            if d["result_code"] != 1 or d["result_msg"] != "success":
+                return data
 
-                from pprint import pprint
-                for item in d["result_data"]["list"]:
-                    if item["name"].startswith("I18N_COMMON_"):
-                        item_name = self.strings.get(item["name"][:-3]).format(item["name"][-1])
-                    else:
-                        item_name = item["name"]
+            for item in d["result_data"]["list"]:
+                name = item["data_name"]
+                if name.startswith("I18N_COMMON_"):
+                    id: str = name.removeprefix("I18N_COMMON_").lower()
+                else:
+                    id = name.removeprefix("I18N_").lower()
+                data[id] = InverterItem(
+                    name=name,
+                    desc=self.strings.get(name, name),
+                    value=item["data_value"],
+                    unit=item["data_unit"],
+                )
 
-                    name = item_name + " Voltage"
+            await websocket.send(
+                json.dumps(
+                    {
+                        "lang": self.locale,
+                        "token": token,
+                        "service": "direct",
+                        "dev_id": dev_id,
+                    }
+                )
+            )
+            d = json.loads(await websocket.recv())
+            if d["result_code"] != 1 or d["result_msg"] != "success":
+                return data
 
-                    id = name.lower().replace(" ", "_")
+            from pprint import pprint
+            for item in d["result_data"]["list"]:
+                if item["name"].startswith("I18N_COMMON_"):
+                    item_name = self.strings.get(item["name"][:-3]).format(item["name"][-1])
+                else:
+                    item_name = item["name"]
 
-                    data[id] = InverterItem(
-                        name=item["name"],
-                        desc=name,
-                        value=item["voltage"],
-                        unit=item["voltage_unit"],
-                    )
+                name = item_name + " Voltage"
 
-                    name = item_name + " Current"
+                id = name.lower().replace(" ", "_")
 
-                    id = name.lower().replace(" ", "_")
+                data[id] = InverterItem(
+                    name=item["name"],
+                    desc=name,
+                    value=item["voltage"],
+                    unit=item["voltage_unit"],
+                )
 
-                    data[id] = InverterItem(
-                        name=item["name"],
-                        desc=name,
-                        value=item["current"],
-                        unit=item["current_unit"],
-                    )
-            return data
+                name = item_name + " Current"
+
+                id = name.lower().replace(" ", "_")
+
+                data[id] = InverterItem(
+                    name=item["name"],
+                    desc=name,
+                    value=item["current"],
+                    unit=item["current_unit"],
+                )
+
+            await websocket.send(
+                json.dumps(
+                    {
+                        "lang": self.locale,
+                        "token": token,
+                        "service": "logout",
+                    }
+                )
+            )
+
+        return data
 
     def get_data(self) -> dict[str, InverterItem]:
         return asyncio.run(self.get_data_async())
