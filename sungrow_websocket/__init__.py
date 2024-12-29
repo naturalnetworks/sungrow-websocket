@@ -267,7 +267,7 @@ class SungrowWebsocket:
                     }
                 )
             )
-
+        await websocket.close()
         return data
 
     def get_data(self) -> dict[str, InverterItem]:
